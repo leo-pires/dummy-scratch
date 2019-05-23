@@ -22,7 +22,7 @@ xml_dir = os.path.join(args.inbreast_dir, 'AllXML')
 dcm_dir = os.path.join(args.inbreast_dir, 'AllDICOMs')
 dataset_fn = os.path.join(args.inbreast_dir, 'INbreast.csv')
 gen_mass = args.gen_mass
-gen_msc = args.gen_msc
+gen_mcs = args.gen_mcs
 
 ###
 # prepare data
@@ -46,7 +46,7 @@ for roi_fn in glob(os.path.join(xml_dir, '*.xml')):
 	root = tree.getroot()
 	for elem_roi in root.findall('./dict/array/dict/array/dict'):
 		abnormality_type = elem_roi[15].text
-		if not ((abnormality_type == 'Mass' and gen_mass) or (abnormality_type == 'Calcification' and gen_msc)):
+		if not ((abnormality_type == 'Mass' and gen_mass) or (abnormality_type == 'Calcification' and gen_mcs)):
 			continue
 		index = elem_roi[7].text
 		points_x = []
