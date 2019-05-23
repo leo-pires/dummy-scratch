@@ -53,8 +53,8 @@ for roi_fn in glob(os.path.join(xml_dir, '*.xml')):
 		points_y = []
 		for elem_point in elem_roi[21].findall('./'):
 			x, y = elem_point.text.strip('()').split(',')
-			points_x.append(floor(float(x)))
-			points_y.append(ceil(float(y)))
+			points_x.append(int(float(x)))
+			points_y.append(int(float(y)))
 		rois.append([id, int(index), abnormality_type, min(points_x), min(points_y), max(points_x), max(points_y)])
 rois_df = pd.DataFrame(rois, columns=['id', 'index', 'type', 'min_x', 'min_y', 'max_x', 'max_y'])
 
@@ -99,7 +99,7 @@ df = df.apply(lambda r: expand_calcifications(r, args.mcs_padding), axis=1)
 
 def to_xml(index, grouped):
 	folder = 'VOC2007'
-	filename = str(index) + '.png'
+	filename = str(index) + '.jpg'
 	width = grouped['columns'].min()
 	height = grouped['rows'].min()
 	laterality = grouped['laterality'].min()
