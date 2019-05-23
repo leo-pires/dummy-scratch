@@ -9,15 +9,20 @@ import pandas as pd
 import pydicom
 
 
-parser = argparse.ArgumentParser(description='Convert INbreast dataset to PASCAL VOC 2007 structure')
+parser = argparse.ArgumentParser(description='Convert INbreast dataset annotations to PASCAL VOC 2007 structure')
 parser.add_argument('inbreast_dir', help='input INbreast dataset base dir')
 parser.add_argument('output_dir')
+parser.add_argument('--gen_mass', help='generate mass annotations', action='store_true')
+parser.add_argument('--gen_mcs', help='generate microcalcifications annotations', action='store_true')
 parser.add_argument('--mcs_padding', help='padding added to microcalcifications clusters', type=int, default=20)
+
 args = parser.parse_args()
 
 xml_dir = os.path.join(args.inbreast_dir, 'AllXML')
 dcm_dir = os.path.join(args.inbreast_dir, 'AllDICOMs')
 dataset_fn = os.path.join(args.inbreast_dir, 'INbreast.csv')
+gen_mass = args.gen_mass
+gen_msc = args.gen_msc
 
 ###
 # prepare data
@@ -41,7 +46,7 @@ for roi_fn in glob(os.path.join(xml_dir, '*.xml')):
 	root = tree.getroot()
 	for elem_roi in root.findall('./dict/array/dict/array/dict'):
 		abnormality_type = elem_roi[15].text
-		if abnormality_type not in ['Calcification', 'Mass']:
+		if not ((abnormality_type == 'Mass' and gen_mass) or (abnormality_type == 'Calcification' and gen_msc)):
 			continue
 		index = elem_roi[7].text
 		points_x = []
