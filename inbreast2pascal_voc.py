@@ -83,7 +83,7 @@ def expand_calcifications(r, padding):
 	if r['type'] != 'Calcification':
 		return r
 	r['min_x'] = max(0, r['min_x'] - padding)
-	r['min_y'] = max(0, r['min_x'] - padding)
+	r['min_y'] = max(0, r['min_y'] - padding)
 	r['max_x'] = min(r['max_x'] + padding, r['columns'])
 	r['max_y'] = min(r['max_y'] + padding, r['rows'])
 	return r
