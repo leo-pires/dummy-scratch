@@ -13,19 +13,18 @@ import pydicom
 parser = argparse.ArgumentParser(description='Convert INbreast dataset annotations to PASCAL VOC 2007 structure')
 parser.add_argument('inbreast_dir', help='input INbreast dataset base dir')
 parser.add_argument('output_dir')
-parser.add_argument('--mass', help='generate mass annotations', action='store_true')
-parser.add_argument('--mcs', help='generate microcalcifications annotations', action='store_true')
-parser.add_argument('--min_birads', help='filter birads by a minimum', type=str)
-parser.add_argument('--padding_mcs', help='padding added to microcalcifications clusters', type=int, default=20)
+parser.add_argument('--gen_mass', help='generate annotations for masses', action='store_true')
+parser.add_argument('--gen_calc', help='generate annotations for microcalcifications', action='store_true')
+parser.add_argument('--calc_padding', help='padding added to microcalcifications clusters', type=int, default=20)
+parser.add_argument('--pathology_filter', action='append', help='filter by pathology')
+parser.add_argument('--pathology_in_name', help='add pathology do annotation name', action='store_true')
 
 args = parser.parse_args()
 
 xml_dir = os.path.join(args.inbreast_dir, 'AllXML')
 dcm_dir = os.path.join(args.inbreast_dir, 'AllDICOMs')
-dataset_fn = os.path.join(args.inbreast_dir, 'INbreast.csv')
-gen_mass = args.mass
-gen_mcs = args.mcs
-
+gen_mass = args.gen_mass
+gen_calc = args.gen_calc
 
 ###
 # prepare data
@@ -35,19 +34,27 @@ gen_mcs = args.mcs
 
 print('reading dataset cases...')
 
-dataset_df = pd.read_csv(dataset_fn, sep=';')
-dataset_df.drop(columns=['Patient ID', 'Patient age', 'Acquisition date'], inplace=True)
-dataset_df.rename(columns={'File Name': 'id', 'Laterality': 'laterality', 'View': 'view', 'ACR': 'acr', 'Bi-Rads': 'birads'}, inplace=True)
-dataset_df['birads_base'] = dataset_df['birads'].apply(lambda x: x[0])
+cases_fn = os.path.join(args.inbreast_dir, 'INbreast.csv')
+cases_df = pd.read_csv(cases_fn, sep=';')
+cases_df.drop(columns=['Patient ID', 'Patient age', 'Acquisition date'], inplace=True)
+cases_df.rename(columns={'Laterality': 'laterality', 'View': 'view', 'Acquisition date': 'acquisition_date', 'File Name': 'id', 'ACR': 'breasy_density', 'Bi-Rads': 'birads_specific'}, inplace=True)
+cases_df['birads'] = cases_df['birads_specific'].apply(lambda x: x[0])
 
-print('found %d cases' % len(dataset_df))
+print('found %d cases' % len(cases_df))
 
-min_birads = args.min_birads
-if min_birads:
-  birads_filter = [x for x in dataset_df.birads.unique() if x[0] >= min_birads]
-  dataset_df = dataset_df[dataset_df.birads_base.isin(birads_filter)]
 
-print('using %d cases' % len(dataset_df))
+def pathology(birads):
+  if birads >= 1 and birads <= 3:
+    return 'BENIGN'
+  elif birads > 3:
+    return 'MALIGNANT'
+cases_df['pathology'] = cases_df['birads'].apply(lambda x: pathology(int(x)))
+
+pathology_filter = [x.upper() for x in (args.pathology_filter or [])]
+if len(pathology_filter) > 0:
+  cases_df = cases_df[cases_df.pathology.isin(pathology_filter)]
+
+print('using %d cases' % len(cases_df))
 print('')
 
 
@@ -56,13 +63,16 @@ print('')
 print('reading rois...')
 
 rois = []
-for id in dataset_df.id:
+for id in cases_df.id:
   roi_fn = os.path.join(xml_dir, '%d.xml' % id)
+  if not os.path.exists(roi_fn):
+    print('File not found %s' % roi_fn)
+    continue
   tree = ET.parse(roi_fn)
   root = tree.getroot()
   for elem_roi in root.findall('./dict/array/dict/array/dict'):
-    abnormality_type = elem_roi[15].text
-    if not ((abnormality_type == 'Mass' and gen_mass) or (abnormality_type == 'Calcification' and gen_mcs)):
+    abnormality = elem_roi[15].text
+    if not ((abnormality == 'Mass' and gen_mass) or (abnormality == 'Calcification' and gen_calc)):
       continue
     index = elem_roi[7].text
     points_x = []
@@ -71,14 +81,15 @@ for id in dataset_df.id:
       x, y = elem_point.text.strip('()').split(',')
       points_x.append(int(float(x)))
       points_y.append(int(float(y)))
-    rois.append([id, int(index), abnormality_type, min(points_x), min(points_y), max(points_x), max(points_y)])
-rois_df = pd.DataFrame(rois, columns=['id', 'index', 'type', 'min_x', 'min_y', 'max_x', 'max_y'])
+    rois.append([id, int(index), abnormality, min(points_x), min(points_y), max(points_x), max(points_y)])
+rois_df = pd.DataFrame(rois, columns=['id', 'index', 'abnormality', 'min_x', 'min_y', 'max_x', 'max_y'])
 
 print('using %d rois' % len(rois_df))
 print('')
 
 
 # metadata
+# TODO: gerar número do paciente
 
 print('reading dicoms metadata...')
 
@@ -97,18 +108,19 @@ print('found %s dicom files' % len(dcm_df))
 print('')
 
 # join dataframes
-df = rois_df.set_index('id').join(dataset_df.set_index('id')).join(dcm_df.set_index('id'))
+# TODO: usar left para no caso de não haver anotações
+df = rois_df.set_index('id').join(cases_df.set_index('id')).join(dcm_df.set_index('id'))
 
 # expand calcifications bounding boxes
 def expand_calcifications(r, padding):
-  if r['type'] != 'Calcification':
+  if r['abnormality'] != 'Calcification':
     return r
   r['min_x'] = max(0, r['min_x'] - padding)
   r['min_y'] = max(0, r['min_y'] - padding)
   r['max_x'] = min(r['max_x'] + padding, r['columns'])
   r['max_y'] = min(r['max_y'] + padding, r['rows'])
   return r
-df = df.apply(lambda r: expand_calcifications(r, args.padding_mcs), axis=1)
+df = df.apply(lambda r: expand_calcifications(r, args.calc_padding), axis=1)
 
 
 ###
@@ -118,6 +130,7 @@ df = df.apply(lambda r: expand_calcifications(r, args.padding_mcs), axis=1)
 # sobre o pascal voc: o que fazer com pose e truncated?
 # sobre o inbreast: o que fazer com acr, birads?
 
+pathology_in_name = args.pathology_in_name
 def to_xml(index, grouped):
   folder = 'VOC2007'
   filename = str(index) + '.jpg'
@@ -125,14 +138,18 @@ def to_xml(index, grouped):
   height = grouped['rows'].min()
   laterality = grouped['laterality'].min()
   view = grouped['view'].min()
-  acr = grouped['acr'].min()
+  breast_density = grouped['breasy_density'].min()
   birads = grouped['birads'].min()
+  birads_specific = grouped['birads_specific'].min()
+  abnormality = grouped['abnormality'].min()
+  pathology = grouped['pathology'].min()
+  name = '%s%s' % (abnormality, pathology) if pathology_in_name else abnormality
   # iterate over cases
   objs = []
   for _, row in grouped.iterrows():
     obj = '\n'.join([
       '    <object>',
-      '        <name>%s</name>' % row['type'],
+      '        <name>%s</name>' % name,
       '        <difficult>0</difficult>',
       '        <bndbox>',
       '            <xmin>%d</xmin>' % row['min_x'],
@@ -149,8 +166,9 @@ def to_xml(index, grouped):
     '    <filename>%s</filename>' % filename,
     '    <inbreast_laterality>%s</inbreast_laterality>' % laterality,
     '    <inbreast_view>%s</inbreast_view>' % view,
-    '    <inbreast_acr>%s</inbreast_acr>' % acr,
+    '    <inbreast_breast_density>%s</inbreast_breast_density>' % breast_density,
     '    <inbreast_birads>%s</inbreast_birads>' % birads,
+    '    <inbreast_birads_specific>%s</inbreast_birads_specific>' % birads_specific,
     '\n'.join([
       '    <size>',
       '        <width>%s</width>' % width,
@@ -168,15 +186,17 @@ def to_xml(index, grouped):
 annotations_dir = os.path.join(args.output_dir, 'Annotations')
 os.makedirs(annotations_dir, exist_ok=True)
 print('writing annotations...')
+wrote = 0
 for index, grouped in df.groupby('id'):
     print('\r%s' % index, end="")
     xml = to_xml(index, grouped)
     xml_fn = os.path.join(annotations_dir, str(index) + '.xml')
     with open(xml_fn, 'w') as f:
         f.write(xml)
+    wrote += 1
 print('')
 print('')
-print('done!')
+print('wrote %d annotations files' % wrote)
 
 # write image sets
 
