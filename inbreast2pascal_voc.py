@@ -23,6 +23,7 @@ args = parser.parse_args()
 
 xml_dir = os.path.join(args.inbreast_dir, 'AllXML')
 dcm_dir = os.path.join(args.inbreast_dir, 'AllDICOMs')
+output_dir = os.path.join(args.output_dir, 'VOC2007')
 gen_mass = args.gen_mass
 gen_calc = args.gen_calc
 
@@ -183,7 +184,7 @@ def to_xml(index, grouped):
   return doc
 
 # write annotations xml
-annotations_dir = os.path.join(args.output_dir, 'Annotations')
+annotations_dir = os.path.join(output_dir, 'Annotations')
 os.makedirs(annotations_dir, exist_ok=True)
 print('writing annotations...')
 wrote = 0
@@ -203,7 +204,7 @@ print('wrote %d annotations files' % wrote)
 trainval = [str(x) for x in list(np.unique(df.index.values))]
 test = trainval
 
-image_sets_dir = os.path.join(args.output_dir, 'ImageSets', 'Main')
+image_sets_dir = os.path.join(output_dir, 'ImageSets', 'Main')
 trainval_fn = os.path.join(image_sets_dir, 'trainval.txt')
 test_fn = os.path.join(image_sets_dir, 'test.txt')
 os.makedirs(image_sets_dir, exist_ok=True)
@@ -215,5 +216,5 @@ with open(test_fn, 'w') as f:
 
 # images
 
-jpeg_images_dir = os.path.join(args.output_dir, 'JPEGImages')
+jpeg_images_dir = os.path.join(output_dir, 'JPEGImages')
 os.makedirs(jpeg_images_dir, exist_ok=True)
