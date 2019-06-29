@@ -6,6 +6,7 @@ import cv2
 import matplotlib.pyplot as plt
 import xml.etree.ElementTree as ET
 import pandas as pd
+import numpy as np
 import pydicom
 
 
@@ -176,3 +177,23 @@ for index, grouped in df.groupby('id'):
 print('')
 print('')
 print('done!')
+
+# write image sets
+
+trainval = [str(x) for x in list(np.unique(df.index.values))]
+test = trainval
+
+image_sets_dir = os.path.join(args.output_dir, 'ImageSets', 'Main')
+trainval_fn = os.path.join(image_sets_dir, 'trainval.txt')
+test_fn = os.path.join(image_sets_dir, 'test.txt')
+os.makedirs(image_sets_dir, exist_ok=True)
+
+with open(trainval_fn, 'w') as f:
+  f.write('\n'.join(trainval))
+with open(test_fn, 'w') as f:
+  f.write('\n'.join(test))
+
+# images
+
+jpeg_images_dir = os.path.join(args.output_dir, 'JPEGImages')
+os.makedirs(jpeg_images_dir, exist_ok=True)
