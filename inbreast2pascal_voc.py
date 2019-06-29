@@ -144,7 +144,7 @@ def to_xml(index, grouped):
   birads_specific = grouped['birads_specific'].min()
   abnormality = grouped['abnormality'].min()
   pathology = grouped['pathology'].min()
-  name = '%s%s' % (abnormality, pathology) if pathology_in_name else abnormality
+  name = '%s%s' % (abnormality.title(), pathology.title()) if pathology_in_name else abnormality.title()
   # iterate over cases
   objs = []
   for _, row in grouped.iterrows():
@@ -218,3 +218,10 @@ with open(test_fn, 'w') as f:
 
 jpeg_images_dir = os.path.join(output_dir, 'JPEGImages')
 os.makedirs(jpeg_images_dir, exist_ok=True)
+
+convert_dcm_fn = os.path.join(jpeg_images_dir, 'convert_dcm.sh')
+with open(convert_dcm_fn, 'w') as f:
+  for id, r in df.iterrows():
+    input_dcm_fn = os.path.join(dcm_dir, r['dcm_fn'])
+    output_jpg_fn = os.path.join(jpeg_images_dir, '%d.jpg' % id)
+    f.write('dcmj2pnm -d +oj +Jq 100 --min-max-window %s %s\n' % (input_dcm_fn, output_jpg_fn))
