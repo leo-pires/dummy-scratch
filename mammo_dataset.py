@@ -110,7 +110,8 @@ class INbreastDataset:
   def prepare_dataset(self, all_images=True):
     dataset = imantics.Dataset('INbreast')
     categories_names = list(self.annotations_df.category.unique())
-    categories = {name: imantics.Category(name) for name in categories_names}
+    colors = {name: imantics.Color.random() for name in categories_names}
+    categories = {name: imantics.Category(name, id=i, color=colors[name]) for i, name in enumerate(categories_names)}
     total = len(self.annotations_df)
     prepared = 0
     for case_id, annotations_data in self.annotations_df.groupby('case_id'):
@@ -122,8 +123,9 @@ class INbreastDataset:
       for _, annotation_data in annotations_data.iterrows():
         annotation_id = annotation_data['annotation_id']
         category = categories[annotation_data['category']]
+        color = colors[annotation_data['category']]
         points = annotation_data['points']
-        annotation = imantics.Annotation.from_polygons([points], category=category)
+        annotation = imantics.Annotation(id=annotation_id, polygons=[points], category=category, color=color)
         annotations.append(annotation)
       image.add(annotations)
       dataset.add(image)
