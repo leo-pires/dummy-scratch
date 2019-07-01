@@ -101,13 +101,13 @@ class INbreastDataset:
     print()
     self.annotations_df = annotations_df
 
-  def save(self, all_images=False, convert_dicoms=True):
+  def save(self, all_images=False, convert_dicoms=False):
     self.prepare_dataset(all_images=all_images)
     self.save_dataset()
     if convert_dicoms:
       self.convert_dicoms(all_images=all_images)
 
-  def prepare_dataset(self, all_images=True):
+  def prepare_dataset(self, all_images=False):
     dataset = imantics.Dataset('INbreast')
     categories_names = list(self.annotations_df.category.unique())
     colors = {name: imantics.Color.random() for name in categories_names}
@@ -136,6 +136,7 @@ class INbreastDataset:
     self.dataset = dataset
 
   def save_dataset(self):
+    assert self.dataset is not None, 'dataset should be prepared before saving'
     # create dirs
     out_annotations_dir = os.path.join(self.output_dir, 'annotations')
     os.makedirs(out_annotations_dir, exist_ok=True)
@@ -153,7 +154,7 @@ class INbreastDataset:
   def convert_dicoms(self, all_images=False):
     in_dicom_dir = os.path.join(self.inbreast_dir, 'AllDICOMs')
     # create dirs
-    out_images_dir = self.output_dir
+    out_images_dir = os.path.join(self.output_dir, 'images')
     os.makedirs(out_images_dir, exist_ok=True)
     # check dicoms to convert
     dicoms_df = self.dicoms_df.reset_index()
@@ -180,6 +181,23 @@ class INbreastDataset:
       converted += 1
       print('\r%d %d/%d' % (case_id, converted, total), end="")
     print('\rconverted %d dicom files' % converted)
+    print('')
+
+  def export_annotations(self, output_dir='tmp_annotations', suffix='_annotation'):
+    assert self.dataset is not None, 'dataset should be prepared before exporting annotations'
+    # create dirs
+    os.makedirs(output_dir, exist_ok=True)
+    # export annotations
+    import cv2
+    total = len(self.dataset.images)
+    exported = 0
+    for case_id, image in self.dataset.images.items():
+      out_fn = os.path.join(output_dir, '%d%s.jpg' % (case_id, suffix))
+      drawed = image.draw()
+      cv2.imwrite(out_fn, drawed)
+      exported += 1
+      print('\r%d %d/%d' % (case_id, exported, total), end="")
+    print('\rexported %d annotations' % exported)
     print('')
 
 

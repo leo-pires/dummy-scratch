@@ -13,4 +13,10 @@ mds.process_annotations(gen_calc=False, gen_mass=True, bbox_area_filter=(32 * 32
 print(mds.annotations_df.groupby('category').size())
 print()
 
-mds.save(all_images=False, convert_dicoms=True)
+all_images = False
+convert_dicoms = False
+
+mds.save(all_images=all_images, convert_dicoms=convert_dicoms)
+
+# mds.prepare_dataset(all_images=all_images)
+# mds.export_annotations()
