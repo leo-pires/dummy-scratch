@@ -9,6 +9,7 @@ import PIL.Image
 from pydicom_PIL import get_LUT_value
 import imantics
 import json
+import shutil
 
 
 class INbreastDataset:
@@ -40,13 +41,13 @@ class INbreastDataset:
       dicom = pydicom.dcmread(dicom_fn)
       rows, columns = dicom.Rows, dicom.Columns
       # add case
-      dicoms.append([patient_id, case_id, rows, columns])
+      dicoms.append([patient_id, case_id, rows, columns, dicom_fn_basename])
       readed += 1
       print('\r%d %d/%d' % (case_id, readed, total), end="")
     print('\rreaded %d dicom files' % readed)
     print('')
     # create dataset
-    dicoms_df = pd.DataFrame(dicoms, columns=['patient_id', 'case_id', 'rows', 'columns'])
+    dicoms_df = pd.DataFrame(dicoms, columns=['patient_id', 'case_id', 'rows', 'columns', 'dicom_fn'])
     dicoms_df.set_index('case_id', inplace=True)
     self.dicoms_df = dicoms_df
 
@@ -59,7 +60,7 @@ class INbreastDataset:
     cases_meta_df['birads'] = cases_meta_df['birads_specific'].apply(lambda x: int(x[0]))
     cases_meta_df['pathology'] = cases_meta_df['birads'].apply(lambda x: self.__infer_pathology(x).title())
     cases_meta_df.set_index('case_id', inplace=True)
-    print('found %d cases metadata' % len(cases_meta_df))
+    print('founded %d cases metadata' % len(cases_meta_df))
     # create dataset
     cases_df = cases_meta_df.join(self.dicoms_df)
     print('matched %d cases/dicoms' % len(cases_df))
@@ -100,11 +101,11 @@ class INbreastDataset:
     print()
     self.annotations_df = annotations_df
 
-  def save(self, all_images=True, convert_dicoms=True):
+  def save(self, all_images=False, convert_dicoms=True):
     self.prepare_dataset(all_images=all_images)
     self.save_dataset()
     if convert_dicoms:
-      self.convert_dicoms()
+      self.convert_dicoms(all_images=all_images)
 
   def prepare_dataset(self, all_images=True):
     dataset = imantics.Dataset('INbreast')
@@ -133,29 +134,51 @@ class INbreastDataset:
     self.dataset = dataset
 
   def save_dataset(self):
+    # create dirs
+    out_annotations_dir = os.path.join(self.output_dir, 'annotations')
+    os.makedirs(out_annotations_dir, exist_ok=True)
+    out_annotation_train_fn = os.path.join(out_annotations_dir, 'instances_train2017.json')
+    out_annotation_val_fn = os.path.join(out_annotations_dir, 'instances_val2017.json')
+    # transform to coco and save json
     print('\rsaving dataset', end="")
     data = self.dataset.coco()
-    with open('teste.json', 'w') as f:
+    with open(out_annotation_train_fn, 'w') as f:
         json.dump(data, f)
+    shutil.copy(out_annotation_train_fn, out_annotation_val_fn)
     print('\rcoco dataset saved')
+    print()
 
-  def convert_dicoms(self):
-    pass
-    # out_images_dir = os.path.join(output_dir, 'JPEGImages')
-    # # create dirs if converting
-    # os.makedirs(self.out_images_dir, exist_ok=True)
-    # # convert
-    # out_fn = os.path.join(self.out_images_dir, '%d.png' % case_id)
-    # pixel_array = dicom.pixel_array
-    # # inbreast doesnt have window date, so calculate
-    # pixel_array_min, pixel_array_max = np.min(pixel_array), np.max(pixel_array)
-    # window = pixel_array_max - pixel_array_min
-    # level = pixel_array_min + window // 2
-    # pixel_array = get_LUT_value(pixel_array, (window,), (level,))
-    # image = PIL.Image.fromarray(pixel_array).convert('L')
-    # # save
-    # image.save(out_fn)
-    # converted += 1
+  def convert_dicoms(self, all_images=False):
+    in_dicom_dir = os.path.join(self.inbreast_dir, 'AllDICOMs')
+    # create dirs
+    out_images_dir = self.output_dir
+    os.makedirs(out_images_dir, exist_ok=True)
+    # check dicoms to convert
+    dicoms_df = self.dicoms_df.reset_index()
+    if not all_images:
+      used_cases = self.annotations_df.index.unique()
+      dicoms_df = dicoms_df[dicoms_df.case_id.isin(used_cases)]
+    dicoms_df.set_index('case_id', inplace=True)
+    # convert
+    total = len(dicoms_df)
+    converted = 0
+    for case_id, dicom_data in dicoms_df.iterrows():
+      dicom_fn = os.path.join(in_dicom_dir, dicom_data['dicom_fn'])
+      out_fn = os.path.join(out_images_dir, '%d.png' % case_id)
+      dicom = pydicom.dcmread(dicom_fn)
+      pixel_array = dicom.pixel_array
+      # inbreast doesnt have window date, so calculate
+      pixel_array_min, pixel_array_max = np.min(pixel_array), np.max(pixel_array)
+      window = pixel_array_max - pixel_array_min
+      level = pixel_array_min + window // 2
+      pixel_array = get_LUT_value(pixel_array, (window,), (level,))
+      image = PIL.Image.fromarray(pixel_array).convert('L')
+      # save
+      image.save(out_fn)
+      converted += 1
+      print('\r%d %d/%d' % (case_id, converted, total), end="")
+    print('\rconverted %d dicom files' % converted)
+    print('')
 
 
   def __infer_pathology(self, birads):
