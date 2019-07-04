@@ -39,15 +39,15 @@ class INbreastDataset:
       case_id = int(case_id)
       # read dicom and get rows and columns
       dicom = pydicom.dcmread(dicom_fn)
-      rows, columns = dicom.Rows, dicom.Columns
+      width, height = dicom.Columns, dicom.Rows
       # add case
-      dicoms.append([patient_id, case_id, rows, columns, dicom_fn_basename])
+      dicoms.append([patient_id, case_id, width, height, dicom_fn_basename])
       readed += 1
       print('\r%d %d/%d' % (case_id, readed, total), end="")
     print('\rreaded %d dicom files' % readed)
     print('')
     # create dataset
-    dicoms_df = pd.DataFrame(dicoms, columns=['patient_id', 'case_id', 'rows', 'columns', 'dicom_fn'])
+    dicoms_df = pd.DataFrame(dicoms, columns=['patient_id', 'case_id', 'width', 'height', 'dicom_fn'])
     dicoms_df.set_index('case_id', inplace=True)
     self.dicoms_df = dicoms_df
 
@@ -88,12 +88,12 @@ class INbreastDataset:
         if bbox_area >= bbox_area_filter:
           category = '%s%s' % (abnormality.title(), pathology.title())
           points = self.__join_points(points_x, points_y)
-          annotations.append([case_id, annotation_id, category, points])
+          annotations.append([case_id, annotation_id, abnormality, category, points])
         annotations_processed += 1
       cases_processed += 1
       print('\r%d %d/%d' % (case_id, cases_processed, total), end="")
     # create dataset
-    annotations_df = pd.DataFrame(annotations, columns=['case_id', 'annotation_id', 'category', 'points'])
+    annotations_df = pd.DataFrame(annotations, columns=['case_id', 'annotation_id', 'abnormality', 'category', 'points'])
     annotations_df.set_index('case_id', inplace=True)
     annotations_df = annotations_df.join(self.cases_df)
     print('\rprocessed %d annotations' % annotations_processed)
@@ -115,8 +115,8 @@ class INbreastDataset:
     total = len(self.annotations_df)
     prepared = 0
     for case_id, annotations_data in self.annotations_df.groupby('case_id'):
-      width = annotations_data['columns'].unique()[0]
-      height = annotations_data['rows'].unique()[0]
+      width = annotations_data['width'].unique()[0]
+      height = annotations_data['height'].unique()[0]
       image = imantics.Image(id=case_id, width=width, height=height)
       image.file_name = '%d.png' % case_id
       annotations = []
@@ -183,7 +183,7 @@ class INbreastDataset:
     print('\rconverted %d dicom files' % converted)
     print('')
 
-  def export_annotations(self, output_dir='tmp_annotations', suffix='_annotation'):
+  def export_annotations(self, output_dir, suffix='_annotation'):
     assert self.dataset is not None, 'dataset should be prepared before exporting annotations'
     # create dirs
     os.makedirs(output_dir, exist_ok=True)
