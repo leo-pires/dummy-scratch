@@ -3,14 +3,14 @@ import json
 
 
 inbreast_dir = '/Users/lpires/Developer/dl/INbreast'
-output_dir = './tmp'
+output_dir = './out'
 
 mds = mammo_dataset.INbreastDataset(inbreast_dir, output_dir)
 mds.read_dicoms()
 mds.read_cases(pathology_filter=[])
 
-print(mds.cases_df.groupby(['view', 'width', 'height']).size())
-print()
+# print(mds.cases_df.groupby(['view', 'width', 'height']).size())
+# print()
 
 mds.process_annotations(gen_calc=True,
                         gen_mass=True,
@@ -27,7 +27,9 @@ print()
 all_images = False
 convert_dicoms = False
 
-# mds.save(all_images=all_images, convert_dicoms=convert_dicoms)
+mds.save(all_images=all_images, convert_dicoms=convert_dicoms)
+
+# mds.convert_dicoms()
 
 # mds.prepare_dataset(all_images=all_images)
-# mds.draw_annotations('./tmp_annotations/')
+# mds.draw_annotations()

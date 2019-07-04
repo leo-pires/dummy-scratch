@@ -162,7 +162,7 @@ class INbreastDataset:
     print('\rcoco dataset saved')
     print()
 
-  def convert_dicoms(self, all_images=False):
+  def convert_dicoms(self, all_images=True):
     in_dicom_dir = os.path.join(self.inbreast_dir, 'AllDICOMs')
     # create dirs
     out_images_dir = os.path.join(self.output_dir, 'images')
@@ -194,16 +194,17 @@ class INbreastDataset:
     print('\rconverted %d dicom files' % converted)
     print('')
 
-  def draw_annotations(self, output_dir, suffix='_annotation'):
+  def draw_annotations(self, suffix='_annotation'):
     assert self.dataset is not None, 'dataset should be prepared before exporting annotations'
     # create dirs
-    os.makedirs(output_dir, exist_ok=True)
+    out_annotations_images_dir = os.path.join(self.output_dir, 'annotations_images')
+    os.makedirs(out_annotations_images_dir, exist_ok=True)
     # export annotations
     import cv2
     total = len(self.dataset.images)
     exported = 0
     for case_id, image in self.dataset.images.items():
-      out_fn = os.path.join(output_dir, '%d%s.jpg' % (case_id, suffix))
+      out_fn = os.path.join(out_annotations_images_dir, '%d%s.jpg' % (case_id, suffix))
       drawed = image.draw()
       cv2.imwrite(out_fn, drawed)
       exported += 1
