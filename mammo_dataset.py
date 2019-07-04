@@ -72,7 +72,13 @@ class INbreastDataset:
     print()
     self.cases_df = cases_df
 
-  def process_annotations(self, gen_calc=False, gen_mass=False, bbox_area_filter=None):
+  def process_annotations(self,
+                          gen_calc=False,
+                          gen_mass=False,
+                          gen_asymmetry=False,
+                          gen_distortion=False,
+                          gen_spiculated=False,
+                          bbox_area_filter=None):
     in_annotations_dir = os.path.join(self.inbreast_dir, 'AllXML')
     total = len(self.cases_df)
     cases_processed = 0
@@ -81,12 +87,17 @@ class INbreastDataset:
     for case_id, case_data in self.cases_df.iterrows():
       pathology = case_data['pathology']
       case_annotation_fn = os.path.join(in_annotations_dir, '%s.xml' % case_id)
-      case_annotations = self.__parse_annotations(case_annotation_fn, gen_calc=gen_calc, gen_mass=gen_mass)
+      case_annotations = self.__parse_annotations(case_annotation_fn,
+                                                  gen_calc=gen_calc,
+                                                  gen_mass=gen_mass,
+                                                  gen_asymmetry=gen_asymmetry,
+                                                  gen_distortion=gen_distortion,
+                                                  gen_spiculated=gen_spiculated)
       for case_annotation in case_annotations:
         annotation_id, abnormality, points_x, points_y = case_annotation
         bbox_area = (np.max(points_x) - np.min(points_x)) * (np.max(points_y) - np.min(points_y))
         if bbox_area >= bbox_area_filter:
-          category = '%s%s' % (abnormality.title(), pathology.title())
+          category = self.__categorize(abnormality, pathology)
           points = self.__join_points(points_x, points_y)
           annotations.append([case_id, annotation_id, abnormality, category, points])
         annotations_processed += 1
@@ -183,7 +194,7 @@ class INbreastDataset:
     print('\rconverted %d dicom files' % converted)
     print('')
 
-  def export_annotations(self, output_dir, suffix='_annotation'):
+  def draw_annotations(self, output_dir, suffix='_annotation'):
     assert self.dataset is not None, 'dataset should be prepared before exporting annotations'
     # create dirs
     os.makedirs(output_dir, exist_ok=True)
@@ -203,19 +214,44 @@ class INbreastDataset:
 
   def __infer_pathology(self, birads):
     if birads >= 1 and birads <= 3:
-      return 'Benign'
+      return 'benign'
     elif birads > 3:
-      return 'Malignant'
+      return 'malignant'
 
-  def __parse_annotations(self, annotation_fn, gen_calc=False, gen_mass=False):
+  def __parse_annotations(self, annotation_fn, gen_calc=False, gen_mass=False, gen_asymmetry=False, gen_distortion=False, gen_spiculated=False):
+    # verify if annotations exists
     if not os.path.exists(annotation_fn):
       return []
+    # check allowed abnormalities
+    allowed_abnormalities = []
+    if gen_calc:
+      allowed_abnormalities.append('cluster')
+    if gen_mass:
+      allowed_abnormalities.append('mass')
+    if gen_asymmetry:
+      allowed_abnormalities.append('asymmetry')
+      allowed_abnormalities.append('assymetry')
+    if gen_distortion:
+      allowed_abnormalities.append('distortion')
+    if gen_spiculated:
+      allowed_abnormalities.append('spiculated region')
+      allowed_abnormalities.append('espiculated region')
+    abnormalities_mapping = {
+      'cluster': 'calcification',
+      'assymetry': 'asymmetry',
+      'espiculated region': 'spiculated region'
+    }
+    abnormalities_ignored = ['calcification', 'calcifications', 'unnamed', 'point 1', 'point 3']
+    # parse file
     annotations = []
     tree = ET.parse(annotation_fn)
     root = tree.getroot()
     for elem_roi in root.findall('./dict/array/dict/array/dict'):
-      abnormality = elem_roi[15].text
-      if not ((abnormality == 'Calcification' and gen_calc) or (abnormality == 'Mass' and gen_mass)):
+      abnormality = elem_roi[15].text and elem_roi[15].text.lower()
+      abnormality_mapped = abnormalities_mapping[abnormality] if abnormality in abnormalities_mapping else abnormality
+      if abnormality not in allowed_abnormalities:
+        if abnormality and abnormality not in abnormalities_ignored:
+          print('unknown abnormality:', abnormality)
         continue
       annotation_id = int(elem_roi[7].text)
       points_x = []
@@ -224,8 +260,11 @@ class INbreastDataset:
         x, y = elem_point.text.strip('()').split(',')
         points_x.append(round(float(x), 1))
         points_y.append(round(float(y), 1))
-      annotations.append([annotation_id, abnormality, points_x, points_y])
+      annotations.append([annotation_id, abnormality_mapped, points_x, points_y])
     return annotations
+
+  def __categorize(self, abnormality, pathology):
+    return '%s%s' % (abnormality.title().replace(' ', ''), pathology.title().replace(' ', ''))
 
   def __join_points(self, xs, ys):
     result = []
