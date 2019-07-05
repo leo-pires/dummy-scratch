@@ -1,3 +1,4 @@
+import os
 import os.path as osp
 from glob import glob
 import pydicom
@@ -6,6 +7,8 @@ import cv2
 import re
 import numpy as np
 from operator import itemgetter
+import imantics
+import json
 
 
 def parse_annotations(annotation_fn):
@@ -57,29 +60,39 @@ def show_image(img):
 
 
 inbreast_dir = '/Users/lpires/Developer/dl/INbreast'
-annotations_dir = osp.join(inbreast_dir, 'PectoralMuscle/Pectoral Muscle XML')
-dicoms_dir = osp.join(inbreast_dir, 'AllDICOMs')
-images_dir = '/Users/lpires/Developer/dl/dummy-scratch/out/images'
+output_dir = './out-pectoral_muscle'
 scale = 0.2
-debug = True
+debug = False
+
+in_xmls_dir = osp.join(inbreast_dir, 'PectoralMuscle/Pectoral Muscle XML')
+in_dicoms_dir = osp.join(inbreast_dir, 'AllDICOMs')
+in_images_dir = '/Users/lpires/Developer/dl/dummy-scratch/out/images'
+out_images_dir = osp.join(output_dir, 'images')
+out_annotations_dir = osp.join(output_dir, 'annotations')
 
 # cases_ids = [20588046, 20588072]
-cases_ids = sorted([int(osp.basename(x).split('_')[0]) for x in glob(osp.join(annotations_dir, '*.xml'))])
+cases_ids = sorted([int(osp.basename(x).split('_')[0]) for x in glob(osp.join(in_xmls_dir, '*.xml'))])
+
+os.makedirs(out_images_dir, exist_ok=True)
+os.makedirs(out_annotations_dir, exist_ok=True)
+
+dataset = imantics.Dataset('INbreast - prectoral muscle')
+category_breast = imantics.Category('breast')
+category_pectoral_muscle = imantics.Category('pectoral_muscle')
 
 total = len(cases_ids)
 processed = 0
 for case_id in cases_ids:
-  warnings = []
   # check annotation
-  anns_fns = glob(osp.join(annotations_dir, '*%d*.xml' % case_id))
+  anns_fns = glob(osp.join(in_xmls_dir, '*%d*.xml' % case_id))
   assert len(anns_fns) == 1
   ann_fn = anns_fns[0]
   # check dicom
-  dcms_fns = glob(osp.join(dicoms_dir, '*%d*.dcm' % case_id))
+  dcms_fns = glob(osp.join(in_dicoms_dir, '*%d*.dcm' % case_id))
   assert len(dcms_fns) == 1
   dcm_fn = dcms_fns[0]
   # check image
-  imgs_fns = glob(osp.join(images_dir, '*%d*.png' % case_id))
+  imgs_fns = glob(osp.join(in_images_dir, '*%d*.png' % case_id))
   assert len(imgs_fns) == 1
   img_fn = imgs_fns[0]
   # check laterality
@@ -102,10 +115,7 @@ for case_id in cases_ids:
   pts = np.array(pts, np.int32)
   # show processed
   processed += 1
-  if len(warnings) == 0:
-    print('%d %d/%d' % (case_id, processed, total))
-  else:
-    print('%d (%s) %d/%d' % (case_id, ', '.join(warnings), processed, total))
+  print('\r%d %d/%d' % (case_id, processed, total), end='')
   # create pectoral muscle mask
   pm_mask_gray = np.zeros((height, width, 1), np.uint8)
   pm_mask_gray = cv2.fillPoly(pm_mask_gray, [pts], 255)
@@ -114,8 +124,22 @@ for case_id in cases_ids:
   _ , img_gray = cv2.threshold(img_gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
   breast_mask_gray = cv2.bitwise_and(img_gray, img_gray, mask=cv2.bitwise_not(pm_mask_gray))
   # resize
-  pm_mask_gray = cv2.resize(pm_mask_gray, scaled_dim)
   breast_mask_gray = cv2.resize(breast_mask_gray, scaled_dim)
+  pm_mask_gray = cv2.resize(pm_mask_gray, scaled_dim)
+  # save rescaled image
+  img_rescaled_fn = osp.join(out_images_dir, '%d.png' % case_id)
+  img_rescaled = cv2.resize(img, scaled_dim)
+  cv2.imwrite(img_rescaled_fn, img_rescaled)
+  # add to coco
+  coco_image = imantics.Image(id=case_id, width=scaled_dim[1], height=scaled_dim[0])
+  coco_image.file_name = '%d.png' % case_id
+  breast_mask_mask = imantics.Mask.create(breast_mask_gray)
+  pm_mask_mask = imantics.Mask.create(pm_mask_gray)
+  breast_annotation = imantics.Annotation(mask=breast_mask_mask, category=category_breast, color=category_breast.color)
+  pectoral_muscle_annotation = imantics.Annotation(mask=pm_mask_mask, category=category_pectoral_muscle, color=category_pectoral_muscle.color)
+  coco_image.add(breast_annotation)
+  coco_image.add(pectoral_muscle_annotation)
+  dataset.add(coco_image)
   # show debug
   if debug:
     # resize image
@@ -132,3 +156,9 @@ for case_id in cases_ids:
     blended = cv2.addWeighted(img_debug, 1.0, breast_mask_bgr, 0.1, 0)
     blended = cv2.addWeighted(blended, 1.0, pm_mask_bgr, 0.1, 0)
     show_image(blended)
+print()
+
+data = dataset.coco()
+out_annotation_train_fn = os.path.join(out_annotations_dir, 'instances_train2017.json')
+with open(out_annotation_train_fn, 'w') as f:
+    json.dump(data, f)
