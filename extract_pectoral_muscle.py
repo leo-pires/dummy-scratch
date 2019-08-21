@@ -1,8 +1,8 @@
 import os
 import os.path as osp
 from glob import glob
-import pydicom
 import xml.etree.ElementTree as ET
+import lxml.etree as et
 import cv2
 import re
 import numpy as np
@@ -60,17 +60,18 @@ def show_image(img):
 
 
 inbreast_dir = '/Users/lpires/Developer/dl/INbreast'
+images_dir = './out/images'
 output_dir = './out-pectoral_muscle'
 scale = 0.2
 debug = False
 
 in_xmls_dir = osp.join(inbreast_dir, 'PectoralMuscle/Pectoral Muscle XML')
 in_dicoms_dir = osp.join(inbreast_dir, 'AllDICOMs')
-in_images_dir = '/Users/lpires/Developer/dl/dummy-scratch/out/images'
+in_images_dir = images_dir
 out_images_dir = osp.join(output_dir, 'images')
-out_annotations_dir = osp.join(output_dir, 'annotations')
+out_annotations_dir = osp.join(out_images_dir, 'annotations')
 
-# cases_ids = [20588046, 20588072]
+# cases_ids = [20586960]
 cases_ids = sorted([int(osp.basename(x).split('_')[0]) for x in glob(osp.join(in_xmls_dir, '*.xml'))])
 
 os.makedirs(out_images_dir, exist_ok=True)
@@ -79,6 +80,8 @@ os.makedirs(out_annotations_dir, exist_ok=True)
 dataset = imantics.Dataset('INbreast - prectoral muscle')
 category_breast = imantics.Category('breast')
 category_pectoral_muscle = imantics.Category('pectoral_muscle')
+index_breast = 0
+index_pectoral_muscle = 1
 
 total = len(cases_ids)
 processed = 0
@@ -126,10 +129,14 @@ for case_id in cases_ids:
   # resize
   breast_mask_gray = cv2.resize(breast_mask_gray, scaled_dim)
   pm_mask_gray = cv2.resize(pm_mask_gray, scaled_dim)
-  # save rescaled image
+  # save images
   img_rescaled_fn = osp.join(out_images_dir, '%d.png' % case_id)
+  img_breat_mask_fn = osp.join(out_annotations_dir, '%d_pixels%d.png' % (case_id, index_breast))
+  pm_mask_fn = osp.join(out_annotations_dir, '%d_pixels%d.png' % (case_id, index_pectoral_muscle))
   img_rescaled = cv2.resize(img, scaled_dim)
   cv2.imwrite(img_rescaled_fn, img_rescaled)
+  cv2.imwrite(img_breat_mask_fn, breast_mask_gray)
+  cv2.imwrite(pm_mask_fn, pm_mask_gray)
   # add to coco
   coco_image = imantics.Image(id=case_id, width=scaled_dim[1], height=scaled_dim[0])
   coco_image.file_name = '%d.png' % case_id
@@ -158,7 +165,29 @@ for case_id in cases_ids:
     show_image(blended)
 print()
 
-data = dataset.coco()
-out_annotation_train_fn = os.path.join(out_annotations_dir, 'instances_train2017.json')
-with open(out_annotation_train_fn, 'w') as f:
-    json.dump(data, f)
+# build pixels elements
+e_breast = et.Element('pixels')
+et.SubElement(e_breast, 'id').text = str(index_breast)
+e_pectoral_muscle = et.Element('pixels')
+et.SubElement(e_pectoral_muscle, 'id').text = str(index_pectoral_muscle)
+pixels = {'breast': e_breast, 'pectoral_muscle': e_pectoral_muscle}
+
+# iterate over images
+for case_id, imantics_image in dataset.images.items():
+  voc = imantics_image.voc()
+  for e_object in voc.xpath('//annotation/object'):
+      name = [e.text for e in e_object if e.tag == 'name'][0]
+      e_bndbox = [e for e in e_object if e.tag == 'bndbox'][0]
+      assert name in ['breast', 'pectoral_muscle']
+      assert e_bndbox is not None
+      e_pixels = pixels[name]
+      e_object.append(e_pixels)
+  voc_str = str(et.tostring(voc, pretty_print=True), 'utf-8')
+  annotation_fn = osp.join(out_annotations_dir, '%d.xml' % case_id)
+  with open(annotation_fn, 'w') as f:
+      f.write(voc_str)
+
+# data = dataset.coco()
+# out_annotation_train_fn = os.path.join(out_annotations_dir, 'instances_train2017.json')
+# with open(out_annotation_train_fn, 'w') as f:
+#     json.dump(data, f)
